@@ -1,0 +1,194 @@
+// Collection of states + valid transitions for different types of DERs
+schema DERTypeInfo = literal : sql {
+	entities
+		DERtype state transition
+	foreign_keys
+		for_type : state -> DERtype
+		from_state : transition -> state
+		to_state : transition -> state
+	path_equations
+		from_state.for_type = to_state.for_type
+	attributes
+		name : DERtype -> String
+		name : state -> String
+		P : state -> Double
+		Q : state -> Double
+}
+
+// Network of DER 
+schema DERNetwork = literal : sql {
+	imports
+		DERTypeInfo
+	entities
+		DER
+	foreign_keys
+		of_type : DER -> DERtype
+}
+
+// As above, but each DER starts out in a specific state
+schema DERNetworkInState = literal : sql {
+	imports 
+		DERNetwork
+	foreign_keys
+		in_state : DER -> state
+	path_equations
+		in_state.for_type = of_type
+}
+
+instance battery = literal : DERTypeInfo {
+	generators
+		battery : DERtype
+		batt_off batt_ch batt_dch : state
+		batt_o_to_c batt_o_to_d batt_c_to_o batt_d_to_o : transition
+	equations
+		name(battery) = "Battery"
+		name(batt_off) = "Off"
+		for_type(batt_off) = battery
+		P(batt_off) = "0"
+		Q(batt_off) = "0"
+		name(batt_ch) = "Charging"
+		for_type(batt_ch) = battery
+		P(batt_ch) = "1"
+		Q(batt_ch) = "1"
+		name(batt_dch) = "Discharging"
+		for_type(batt_dch) = battery
+		P(batt_dch) = "-1"
+		Q(batt_dch) = "1"
+		from_state(batt_o_to_c) = batt_off
+		to_state(batt_o_to_c) = batt_ch
+		from_state(batt_o_to_d) = batt_off
+		to_state(batt_o_to_d) = batt_dch
+		from_state(batt_c_to_o) = batt_ch
+		to_state(batt_c_to_o) = batt_off
+		from_state(batt_d_to_o) = batt_dch
+		to_state(batt_d_to_o) = batt_off
+}
+
+instance hvac = literal : DERTypeInfo {
+	generators
+		hvac : DERtype
+		hvac_off hvac_low hvac_high : state
+		hvac_o_to_l hvac_l_to_o hvac_l_to_h hvac_h_to_l : transition
+	equations
+		name(hvac) = "HVAC"
+		name(hvac_off) = "Off"
+		for_type(hvac_off) = hvac
+		P(hvac_off) = "0"
+		Q(hvac_off) = "0"
+		name(hvac_low) = "Low"
+		for_type(hvac_low) = hvac
+		P(hvac_low) = "1"
+		Q(hvac_low) = "1"
+		name(hvac_high) = "High"
+		for_type(hvac_high) = hvac
+		P(hvac_high) = "2"
+		Q(hvac_high) = "2"
+		from_state(hvac_o_to_l) = hvac_off
+		to_state(hvac_o_to_l) = hvac_low
+		from_state(hvac_l_to_o) = hvac_low
+		to_state(hvac_l_to_o) = hvac_off
+		from_state(hvac_l_to_h) = hvac_low
+		to_state(hvac_l_to_h) = hvac_high
+		from_state(hvac_h_to_l) = hvac_high
+		to_state(hvac_h_to_l) = hvac_low
+}
+
+instance photovoltaic = literal : DERTypeInfo {
+	generators
+		photovoltaic : DERtype
+		pv_off pv_low pv_high : state
+		pv_o_to_l pv_l_to_o pv_l_to_h pv_h_to_l : transition
+	equations
+		name(photovoltaic) = "PV"
+		name(pv_off) = "Off"
+		for_type(pv_off) = photovoltaic
+		P(pv_off) = "0"
+		Q(pv_off) = "0"
+		name(pv_low) = "Low"
+		for_type(pv_low) = photovoltaic
+		P(pv_low) = "-1"
+		Q(pv_low) = "1"
+		name(pv_high) = "High"
+		for_type(pv_high) = photovoltaic
+		P(pv_high) = "-2"
+		Q(pv_high) = "2"
+		from_state(pv_o_to_l) = pv_off
+		to_state(pv_o_to_l) = pv_low
+		from_state(pv_l_to_o) = pv_low
+		to_state(pv_l_to_o) = pv_off
+		from_state(pv_l_to_h) = pv_low
+		to_state(pv_l_to_h) = pv_high
+		from_state(pv_h_to_l) = pv_high
+		to_state(pv_h_to_l) = pv_low
+}
+
+instance basicsetup = literal : DERNetwork {
+	imports
+		battery hvac photovoltaic
+	generators
+		batt1 batt2 batt3 batt4 batt5 : DER
+		hvac1 hvac2 hvac3 hvac4 hvac5 hvac6 hvac7 hvac8 hvac9 hvac10 : DER
+		pv1 pv2 pv3 pv4 pv5 pv6 pv7 pv8 pv9 pv10 pv11 : DER
+	equations
+		of_type(batt1) = battery
+		of_type(batt2) = battery
+		of_type(batt3) = battery
+		of_type(batt4) = battery
+		of_type(batt5) = battery
+		of_type(hvac1) = hvac
+		of_type(hvac2) = hvac
+		of_type(hvac3) = hvac
+		of_type(hvac4) = hvac
+		of_type(hvac5) = hvac
+		of_type(hvac6) = hvac
+		of_type(hvac7) = hvac
+		of_type(hvac8) = hvac
+		of_type(hvac9) = hvac
+		of_type(hvac10) = hvac
+		of_type(pv1) = photovoltaic
+		of_type(pv2) = photovoltaic
+		of_type(pv3) = photovoltaic
+		of_type(pv4) = photovoltaic
+		of_type(pv5) = photovoltaic
+		of_type(pv6) = photovoltaic
+		of_type(pv7) = photovoltaic
+		of_type(pv8) = photovoltaic
+		of_type(pv9) = photovoltaic
+		of_type(pv10) = photovoltaic
+		of_type(pv11) = photovoltaic
+}
+
+instance basicinstate = literal : DERNetworkInState {
+	imports
+		basicsetup
+	equations
+		in_state(batt1) = batt_off
+		in_state(batt2) = batt_off
+		in_state(batt3) = batt_off
+		in_state(batt4) = batt_off
+		in_state(batt5) = batt_off
+		in_state(hvac1) = hvac_off
+		in_state(hvac2) = hvac_off
+		in_state(hvac3) = hvac_off
+		in_state(hvac4) = hvac_off
+		in_state(hvac5) = hvac_off
+		in_state(hvac6) = hvac_off
+		in_state(hvac7) = hvac_off
+		in_state(hvac8) = hvac_off
+		in_state(hvac9) = hvac_off
+		in_state(hvac10) = hvac_off
+		in_state(pv1) = pv_off
+		in_state(pv2) = pv_off
+		in_state(pv3) = pv_off
+		in_state(pv4) = pv_off
+		in_state(pv5) = pv_off
+		in_state(pv6) = pv_off
+		in_state(pv7) = pv_off
+		in_state(pv8) = pv_off
+		in_state(pv9) = pv_off
+		in_state(pv10) = pv_off
+		in_state(pv11) = pv_off
+}
+
+
+command export_basicis = export_csv_instance basicinstate "example"

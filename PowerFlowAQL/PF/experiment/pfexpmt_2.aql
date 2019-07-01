@@ -1,0 +1,548 @@
+// Problem / initialization schemas and conversion maps
+// alongside experiment continuation
+// converting from PF to MP is slow but accurate
+
+// Useless right now but maybe later it could be useful
+typeside pf_sql = literal {
+	imports
+		sql
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+// Schemas
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+// Input into Matpower PF
+// Abbreviation: mp
+schema mp_pf = literal : pf_sql {
+	entities
+		branch bus gen
+	
+	foreign_keys
+		branch_source: branch -> bus
+		branch_target: branch -> bus
+		gen_bus : gen -> bus	 
+
+	attributes
+		GEN_BUS : gen -> Integer
+		PG : gen -> Double
+		QG : gen -> Double
+		QMAX : gen -> Double
+		QMIN : gen -> Double
+		VG : gen -> Double
+		MBASE : gen -> Double
+		GEN_STATUS : gen -> Double
+		PMAX : gen -> Double
+		PMIN : gen -> Double
+		PC1 : gen -> Double
+		PC2 : gen -> Double
+		QC1MIN : gen -> Double
+		QC1MAX : gen -> Double
+		QC2MIN : gen -> Double
+		QC2MAX : gen -> Double
+		RAMP_AGC : gen -> Double
+		RAMP_10 : gen -> Double
+		RAMP_30 : gen -> Double
+		RAMP_Q : gen -> Double
+		APF : gen -> Double
+
+		BUS_I : bus -> Integer
+		BUS_TYPE : bus -> Integer
+		PD : bus -> Double
+		QD : bus -> Double
+		GS : bus -> Double
+		BS : bus -> Double
+		BUS_AREA : bus -> Integer
+		VM : bus -> Double
+		VA : bus -> Double
+		BASE_KV : bus -> Double
+		ZONE : bus -> Integer
+		VMAX : bus -> Double
+		VMIN : bus -> Double
+
+		F_BUS : branch -> Integer
+		T_BUS : branch -> Integer
+		BR_R : branch -> Double
+		BR_X : branch -> Double
+		BR_B : branch -> Double
+		RATE_A : branch -> Double
+		RATE_B : branch -> Double
+		RATE_C : branch -> Double
+		TAP : branch -> Double
+		SHIFT : branch -> Double
+		BR_STATUS : branch -> Integer
+		ANGMIN : branch -> Double
+		ANGMAX : branch -> Double
+
+	observation_equations
+		forall br. BUS_I( branch_source(br) ) = F_BUS(br)
+		forall br. BUS_I( branch_target(br) ) = T_BUS(br)
+		forall g. BUS_I( gen_bus(g) ) = GEN_BUS(g) 
+}
+
+// Solved Matpower PF problem
+// Abbreviation: smp
+schema solved_mp_pf = literal : pf_sql {
+	imports 
+		mp_pf
+	
+	attributes
+		PG_INIT : gen -> Double
+		QG_INIT : gen -> Double
+
+		VM_INIT : bus -> Double
+		VA_INIT : bus -> Double
+
+		PF : branch -> Double
+		QF : branch -> Double
+		PT : branch -> Double
+		QT : branch -> Double
+}
+
+// Unsolved Matpower PF problem with solver info
+schema mp_pf_with_solver = literal : pf_sql {
+	imports
+		mp_pf
+
+	entities
+		pf_solver
+
+	attributes
+		ALG : pf_solver -> String
+		TOL : pf_solver -> Double
+		MAX_IT : pf_solver -> Integer
+}
+
+// Solved Matpower PF problem with solver info
+schema solved_mp_pf_with_solver = literal : pf_sql {
+	imports
+		mp_pf_with_solver solved_mp_pf
+
+	attributes
+		ET : pf_solver -> Double // elapsed time
+		ITERATIONS : pf_solver -> Integer
+}
+
+// Basic information on buses, generators, and bus types (mostly ids & the like)
+// Abbreviation: b
+schema base = literal : pf_sql {
+	// Slack and PV buses always have generators attached; PQ buses may or may not.
+	entities
+		branch bus gen pqbus pqbus_with_gen pvbus slackbus
+		
+	foreign_keys
+		branch_source : branch -> bus
+		branch_target : branch -> bus
+		gen_bus : gen -> bus
+		pqbus_bus : pqbus -> bus
+		pqbus_with_gen_gen : pqbus_with_gen -> gen
+		pqbus_with_gen_pqbus : pqbus_with_gen -> pqbus
+		pvbus_gen : pvbus -> gen
+		pvbus_bus : pvbus -> bus
+		slackbus_gen : slackbus -> gen
+		slackbus_bus : slackbus -> bus
+		
+	path_equations
+		slackbus_gen.gen_bus = slackbus_bus
+		pvbus_gen.gen_bus = pvbus_bus
+		pqbus_with_gen_gen.gen_bus = pqbus_with_gen_pqbus.pqbus_bus
+
+	attributes
+		F_BUS : branch -> Integer
+		T_BUS : branch -> Integer
+		
+		BUS_I : bus -> Integer
+		BUS_TYPE : bus -> Integer
+
+		GEN_BUS : gen -> Integer
+
+		PQBUS_BUS : pqbus -> Integer
+
+		PQBUS_WITH_GEN_BUS : pqbus_with_gen -> Integer
+
+		PVBUS_BUS : pvbus -> Integer
+
+		SLACKBUS_BUS : slackbus -> Integer
+
+	observation_equations
+		forall br : branch. BUS_I(branch_source(br)) = F_BUS(br)
+		forall br : branch. BUS_I(branch_target(br)) = T_BUS(br)
+		forall g : gen. BUS_I(gen_bus(g)) = GEN_BUS(g)
+		forall pqb : pqbus. BUS_I(pqbus_bus(pqb)) = PQBUS_BUS(pqb)
+		forall pqbwg : pqbus_with_gen. 
+			PQBUS_WITH_GEN_BUS(pqbwg) = PQBUS_BUS(pqbus_with_gen_pqbus(pqbwg))
+		//forall pqbwg : pqbus_with_gen. 
+		//	BUS_I(gen_bus(pqbus_with_gen_gen(pqbwg))) = PQBUS_WITH_GEN_BUS(pqbwg)
+		// forall pqbwg. PQBUS_WITH_GEN_BUS(pqbwg) = GEN_BUS(pqbus_with_gen_gen(pqbwg))
+		forall pvb : pvbus. BUS_I(pvbus_bus(pvb)) = PVBUS_BUS(pvb)
+		forall pvb : pvbus. GEN_BUS(pvbus_gen(pvb)) = PVBUS_BUS(pvb)
+		forall sb : slackbus. BUS_I(slackbus_bus(sb)) = SLACKBUS_BUS(sb)
+		forall sb : slackbus. GEN_BUS(slackbus_gen(sb)) = SLACKBUS_BUS(sb)
+		// forall pqb. BUS_TYPE(pqbus_bus(pqb)) = 1
+		// forall pvb. BUS_TYPE(pvbus_bus(pvb)) = 2
+		// forall sb. BUS_TYPE(slackbus_bus(sb)) = 3
+		// Can / should we enforce uniqueness of slackbus?
+}
+
+// General statement of a power flow problem (no initialization included)
+// Abbreviation: p
+schema prob = literal : pf_sql {
+	imports
+		base
+		
+	attributes
+		BR_R : branch -> Double
+		BR_X : branch -> Double
+		BR_B : branch -> Double
+		RATE_A : branch -> Double
+		RATE_B : branch -> Double
+		RATE_C : branch -> Double
+		TAP : branch -> Double
+		SHIFT : branch -> Double
+		BR_STATUS : branch -> Integer
+		ANGMIN : branch -> Double
+		ANGMAX : branch -> Double
+		
+		GS : bus -> Double
+		BS : bus -> Double
+		BUS_AREA : bus -> Integer
+		BASE_KV : bus -> Double
+		ZONE : bus -> Integer
+		VMAX : bus -> Double
+		VMIN : bus -> Double
+		
+		QMAX : gen -> Double
+		QMIN : gen -> Double
+		VG : gen -> Double
+		MBASE : gen -> Double
+		GEN_STATUS : gen -> Double
+		PMAX : gen -> Double
+		PMIN : gen -> Double
+		PC1 : gen -> Double
+		PC2 : gen -> Double
+		QC1MIN : gen -> Double
+		QC1MAX : gen -> Double
+		QC2MIN : gen -> Double
+		QC2MAX : gen -> Double
+		RAMP_AGC : gen -> Double
+		RAMP_10 : gen -> Double
+		RAMP_30 : gen -> Double
+		RAMP_Q : gen -> Double
+		APF : gen -> Double
+		
+		PQBUS_PD : pqbus -> Double
+		PQBUS_QD : pqbus -> Double
+		
+		PQBUS_WITH_GEN_PG : pqbus_with_gen -> Double
+		PQBUS_WITH_GEN_QG : pqbus_with_gen -> Double
+		
+		PVBUS_PD : pvbus -> Double
+		PVBUS_PG : pvbus -> Double
+		PVBUS_QD : pvbus -> Double // QD is fixed but QG isn't
+		PVBUS_VM : pvbus -> Double
+		
+		SLACKBUS_VM : slackbus -> Double
+		SLACKBUS_VA : slackbus -> Double
+		SLACKBUS_PD : slackbus -> Double
+		SLACKBUS_QD : slackbus -> Double
+}
+
+// Initialization for future solution (not necessary for problem statement)
+// Abbreviation: i
+schema init = literal : pf_sql {
+	imports
+		base
+
+	attributes
+		PQBUS_VM : pqbus -> Double
+		PQBUS_VA : pqbus -> Double
+		
+		PVBUS_QG : pvbus -> Double // QD is fixed but QG isn't
+		PVBUS_VA : pvbus -> Double
+		
+		SLACKBUS_PG : slackbus -> Double
+		SLACKBUS_QG : slackbus -> Double
+}
+
+// Solution information (no problem data) for solved power flow problem
+schema soln = literal : pf_sql {
+	imports
+		init
+
+	attributes
+		PF : branch -> Double
+		QF : branch -> Double
+		PT : branch -> Double
+		QT : branch -> Double
+}
+
+// Info on setup / params for solver
+schema pf_solver_param = literal : pf_sql {
+	entities
+		pf_solver
+
+	attributes
+		ALG : pf_solver -> String // algorithm
+		TOL : pf_solver -> Double // tolerance
+		MAX_IT : pf_solver -> Integer // max iterations
+}
+
+// Info on setup + time + iterations for solver
+schema pf_solver_final = literal : pf_sql {
+	imports
+		pf_solver_param
+		
+	attributes
+		ET : pf_solver -> Double // elapsed time
+		ITERATIONS : pf_solver -> Integer
+}
+// Conditions / initialization for an unsolved power flow problem
+// Abbreviation: upf
+schema unsolved_pf = literal : pf_sql { imports prob init }
+
+// Solution + parameters + initialization for solved power flow problem
+// Abbreviation: spf
+schema solved_pf = literal : pf_sql {
+	imports
+		unsolved_pf soln
+
+	attributes
+		PQBUS_VM_INIT : pqbus -> Double
+		PQBUS_VA_INIT : pqbus -> Double
+		
+		PVBUS_QG_INIT : pvbus -> Double
+		PVBUS_VA_INIT : pvbus -> Double
+		
+		SLACKBUS_PG_INIT : slackbus -> Double
+		SLACKBUS_QG_INIT : slackbus -> Double
+}
+
+// Data for an unsolved power flow problem alongside solver options
+// Abbreviation: upfs
+schema unsolved_pf_with_solver = literal : pf_sql {
+	imports
+		unsolved_pf pf_solver_param
+}
+
+// Data for an solved power flow problem alongside solver options, time, iterations
+// Abbreviation: spfs
+schema solved_pf_with_solver = literal : pf_sql {
+	imports
+		solved_pf pf_solver_final
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+// Mappings and queries
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+mapping id_mp = identity mp_pf
+mapping id_b = identity base
+mapping id_i = identity init
+mapping id_p = identity prob
+mapping id_soln = identity soln
+mapping id_solver_param = identity pf_solver_param
+mapping id_solver_final = identity pf_solver_final
+mapping id_upf = identity unsolved_pf
+mapping id_spf = identity solved_pf
+
+mapping base_into_upf = literal : base -> unsolved_pf { imports id_b }
+mapping p_into_upf = literal : prob -> unsolved_pf { imports id_p }
+mapping i_into_upf = literal : init -> unsolved_pf { imports id_i }
+
+mapping upf_into_upfs = literal : unsolved_pf -> unsolved_pf_with_solver { imports id_upf }
+mapping spf_into_spfs = literal : solved_pf -> solved_pf_with_solver { imports id_spf }
+
+// Maps initialization schema into initial data for solved PF problem
+mapping i_into_spf = literal : init -> solved_pf {
+	imports
+		id_b
+
+	entity
+		pqbus -> pqbus
+	attributes
+		PQBUS_VM -> PQBUS_VM_INIT
+		PQBUS_VA -> PQBUS_VA_INIT
+
+	entity
+		pvbus -> pvbus
+	attributes
+		PVBUS_QG -> PVBUS_QG_INIT
+		PVBUS_VA -> PVBUS_VA_INIT
+
+	entity
+		slackbus -> slackbus
+	attributes
+		SLACKBUS_PG -> SLACKBUS_PG_INIT
+		SLACKBUS_QG -> SLACKBUS_QG_INIT
+		
+}
+
+// Maps problem / initialization into corresponding initial data for problem
+// Associated delta map extracts problem / initialization data into PF schema
+mapping upf_into_spf = literal : unsolved_pf -> solved_pf { imports id_p i_into_spf }
+mapping upfs_into_spfs = literal : unsolved_pf_with_solver -> solved_pf_with_solver {
+	imports upf_into_spf id_solver_param
+}
+
+mapping soln_into_spf = literal : soln -> solved_pf { imports id_soln }
+
+mapping solver_param_into_upfs = literal : pf_solver_param -> unsolved_pf_with_solver {
+	imports id_solver_param
+}
+mapping solver_final_into_spfs = literal : pf_solver_final -> solved_pf_with_solver {
+	imports id_solver_final
+}
+
+// Used to translate between Matpower schema and unsolved PF schema
+// Evaluate to go from Matpower to UPF
+// Coevaluate to go from UPF to Matpower (takes longer)
+query mp_to_upf = literal : mp_pf -> unsolved_pf {
+	entity
+		branch -> {from br : branch 
+		attributes F_BUS -> F_BUS(br) T_BUS -> T_BUS(br) BR_R -> BR_R(br) BR_X -> BR_X(br)
+		BR_B -> BR_B(br) RATE_A -> RATE_A(br) RATE_B -> RATE_B(br) RATE_C -> RATE_C(br)
+		TAP -> TAP(br) SHIFT -> SHIFT(br) BR_STATUS -> BR_STATUS(br) ANGMIN -> ANGMIN(br)
+		ANGMAX -> ANGMAX(br)
+		foreign_keys branch_source -> {b -> branch_source(br)}
+		branch_target -> {b -> branch_target(br)}}
+	entity
+		bus -> {from b : bus 
+		attributes BUS_I -> BUS_I(b) BUS_TYPE -> BUS_TYPE(b) GS -> GS(b) BS -> BS(b)
+		BUS_AREA -> BUS_AREA(b) BASE_KV -> BASE_KV(b) ZONE -> ZONE(b) VMAX -> VMAX(b)
+		VMIN -> VMIN(b)}
+	entity
+		gen -> {from g : gen
+		attributes GEN_BUS -> GEN_BUS(g) QMAX -> QMAX(g) QMIN -> QMIN(g) VG -> VG(g)
+		MBASE -> MBASE(g) GEN_STATUS -> GEN_STATUS(g) PMAX -> PMAX(g) PMIN -> PMIN(g) PC1 -> PC1(g)
+		PC2 -> PC2(g) QC1MIN -> QC1MIN(g) QC1MAX -> QC1MAX(g) QC2MIN -> QC2MIN(g) 
+		QC2MAX -> QC2MAX(g) RAMP_AGC -> RAMP_AGC(g) RAMP_10 -> RAMP_10(g) RAMP_30 -> RAMP_30(g)
+		RAMP_Q -> RAMP_Q(g) APF -> APF(g) 
+		foreign_keys gen_bus -> {b -> gen_bus(g)}}
+	entity
+		pqbus -> {from pqb : bus where BUS_TYPE(pqb) = "1"
+		attributes PQBUS_BUS -> BUS_I(pqb) PQBUS_PD -> PD(pqb) PQBUS_QD -> QD(pqb)
+		PQBUS_VM -> VM(pqb) PQBUS_VA -> VA(pqb)
+		foreign_keys pqbus_bus -> {b -> pqb}}
+	// Buses with generators attached are indexed by those generators
+	entity
+		pqbus_with_gen -> {from pqb_gen : gen where BUS_TYPE(gen_bus(pqb_gen)) = "1"
+		attributes PQBUS_WITH_GEN_BUS -> BUS_I(gen_bus(pqb_gen)) PQBUS_WITH_GEN_PG -> PG(pqb_gen)
+		PQBUS_WITH_GEN_QG -> QG(pqb_gen)
+		foreign_keys pqbus_with_gen_gen -> {g -> pqb_gen}
+		pqbus_with_gen_pqbus -> {pqb -> gen_bus(pqb_gen)}}
+	entity
+		pvbus -> {from pvb_gen : gen where BUS_TYPE(gen_bus(pvb_gen)) = "2" 
+		attributes PVBUS_BUS -> BUS_I(gen_bus(pvb_gen)) PVBUS_PD -> PD(gen_bus(pvb_gen))
+		PVBUS_PG -> PG(pvb_gen) PVBUS_QD -> QD(gen_bus(pvb_gen)) PVBUS_VM -> VM(gen_bus(pvb_gen))
+		PVBUS_QG -> QG(pvb_gen) PVBUS_VA -> VA(gen_bus(pvb_gen))
+		foreign_keys pvbus_gen -> {g -> pvb_gen} pvbus_bus -> {b -> gen_bus(pvb_gen)}}
+	entity
+		slackbus -> {from sb_gen : gen where BUS_TYPE(gen_bus(sb_gen)) = "3"
+		attributes SLACKBUS_BUS -> BUS_I(gen_bus(sb_gen)) SLACKBUS_VM -> VM(gen_bus(sb_gen))
+		SLACKBUS_VA -> VA(gen_bus(sb_gen)) SLACKBUS_PD -> PD(gen_bus(sb_gen))
+		SLACKBUS_QD -> QD(gen_bus(sb_gen)) SLACKBUS_PG -> PG(sb_gen) SLACKBUS_QG -> QG(sb_gen)
+		foreign_keys slackbus_gen -> {g -> sb_gen} slackbus_bus -> {b -> gen_bus(sb_gen)}}
+}
+
+// As above, but with solver info for each
+query mps_to_upfs = literal : mp_pf_with_solver -> unsolved_pf_with_solver {
+	imports
+		mp_to_upf
+	entity
+		pf_solver -> {from pfs : pf_solver
+		attributes ALG -> ALG(pfs) TOL -> TOL(pfs) MAX_IT -> MAX_IT(pfs)}
+}
+
+// Used to translate between solved Matpower schema and solved PF schema
+// Evaluate to go from solved Matpower to SPF
+// Coevaluate to go from SPF to solved Matpower (takes longer)
+query solved_mp_to_spf = literal : solved_mp_pf -> solved_pf {
+	entity
+		branch -> {from br : branch
+		attributes F_BUS -> F_BUS(br) T_BUS -> T_BUS(br) BR_R -> BR_R(br) BR_X -> BR_X(br)
+		BR_B -> BR_B(br) RATE_A -> RATE_A(br) RATE_B -> RATE_B(br) RATE_C -> RATE_C(br)
+		TAP -> TAP(br) SHIFT -> SHIFT(br) BR_STATUS -> BR_STATUS(br) ANGMIN -> ANGMIN(br)
+		ANGMAX -> ANGMAX(br) PF -> PF(br) QF -> QF(br) PT -> PT(br) QT -> QT(br)
+		foreign_keys branch_source -> {b -> branch_source(br)}
+		branch_target -> {b -> branch_target(br)}}
+	entity
+		bus -> {from b : bus
+		attributes BUS_I -> BUS_I(b) BUS_TYPE -> BUS_TYPE(b) GS -> GS(b) BS -> BS(b)
+		BUS_AREA -> BUS_AREA(b) BASE_KV -> BASE_KV(b) ZONE -> ZONE(b) VMAX -> VMAX(b)
+		VMIN -> VMIN(b)}
+	entity
+		gen -> {from g : gen
+		attributes GEN_BUS -> GEN_BUS(g) QMAX -> QMAX(g) QMIN -> QMIN(g) VG -> VG(g)
+		MBASE -> MBASE(g) GEN_STATUS -> GEN_STATUS(g) PMAX -> PMAX(g) PMIN -> PMIN(g) PC1 -> PC1(g)
+		PC2 -> PC2(g) QC1MIN -> QC1MIN(g) QC1MAX -> QC1MAX(g) QC2MIN -> QC2MIN(g) 
+		QC2MAX -> QC2MAX(g) RAMP_AGC -> RAMP_AGC(g) RAMP_10 -> RAMP_10(g) RAMP_30 -> RAMP_30(g)
+		RAMP_Q -> RAMP_Q(g) APF -> APF(g) 
+		foreign_keys gen_bus -> {b -> gen_bus(g)}}
+	entity
+		pqbus -> {from pqb : bus where BUS_TYPE(pqb) = "1"
+		attributes PQBUS_BUS -> BUS_I(pqb) PQBUS_PD -> PD(pqb) PQBUS_QD -> QD(pqb)
+		PQBUS_VM -> VM(pqb) PQBUS_VA -> VA(pqb) PQBUS_VM_INIT -> VM_INIT(pqb) 
+		PQBUS_VA_INIT -> VA_INIT(pqb)
+		foreign_keys pqbus_bus -> {b -> pqb}}
+	// Buses with generators attached are indexed by those generators
+	// Specifying equality of init & final variables is necessary for coeval to reconvert properly
+	entity
+		pqbus_with_gen -> {from pqb_gen : gen where BUS_TYPE(gen_bus(pqb_gen)) = "1" 
+		PG(pqb_gen) = PG_INIT(pqb_gen) QG(pqb_gen) = QG_INIT(pqb_gen)
+		attributes PQBUS_WITH_GEN_BUS -> BUS_I(gen_bus(pqb_gen)) PQBUS_WITH_GEN_PG -> PG(pqb_gen)
+		PQBUS_WITH_GEN_QG -> QG(pqb_gen)
+		foreign_keys pqbus_with_gen_gen -> {g -> pqb_gen}
+		pqbus_with_gen_pqbus -> {pqb -> gen_bus(pqb_gen)}}
+	entity
+		pvbus -> {from pvb_gen : gen where BUS_TYPE(gen_bus(pvb_gen)) = "2" 
+		PG(pvb_gen) = PG_INIT(pvb_gen) VM(gen_bus(pvb_gen)) = VM_INIT(gen_bus(pvb_gen))
+		attributes PVBUS_BUS -> BUS_I(gen_bus(pvb_gen)) PVBUS_PD -> PD(gen_bus(pvb_gen))
+		PVBUS_PG -> PG(pvb_gen) PVBUS_QD -> QD(gen_bus(pvb_gen)) PVBUS_VM -> VM(gen_bus(pvb_gen))
+		PVBUS_QG -> QG(pvb_gen) PVBUS_VA -> VA(gen_bus(pvb_gen))
+		PVBUS_QG_INIT -> QG_INIT(pvb_gen) PVBUS_VA_INIT -> VA_INIT(gen_bus(pvb_gen))
+		foreign_keys pvbus_gen -> {g -> pvb_gen} pvbus_bus -> {b -> gen_bus(pvb_gen)}}
+	entity
+		slackbus -> {from sb_gen : gen where BUS_TYPE(gen_bus(sb_gen)) = "3"
+		VM(gen_bus(sb_gen)) = VM_INIT(gen_bus(sb_gen)) 
+		VA(gen_bus(sb_gen)) = VA_INIT(gen_bus(sb_gen))
+		attributes SLACKBUS_BUS -> BUS_I(gen_bus(sb_gen)) SLACKBUS_VM -> VM(gen_bus(sb_gen))
+		SLACKBUS_VA -> VA(gen_bus(sb_gen)) SLACKBUS_PD -> PD(gen_bus(sb_gen))
+		SLACKBUS_QD -> QD(gen_bus(sb_gen)) SLACKBUS_PG -> PG(sb_gen) SLACKBUS_QG -> QG(sb_gen)
+		SLACKBUS_PG_INIT -> PG_INIT(sb_gen) SLACKBUS_QG_INIT -> QG_INIT(sb_gen)
+		foreign_keys slackbus_gen -> {g -> sb_gen} slackbus_bus -> {b -> gen_bus(sb_gen)}}
+}
+
+// As above, but with solver info for each
+query smps_to_spfs = literal : solved_mp_pf_with_solver -> solved_pf_with_solver {
+	imports
+		solved_mp_to_spf
+	entity
+		pf_solver -> {from pfs : pf_solver
+		attributes ALG -> ALG(pfs) TOL -> TOL(pfs) MAX_IT -> MAX_IT(pfs)
+		ET -> ET(pfs) ITERATIONS -> ITERATIONS(pfs)}
+}
+
+////////////////////////////////////////////////////////////////////////////////////////////////////
+// Pipeline
+////////////////////////////////////////////////////////////////////////////////////////////////////
+
+// Handle things in Matpower
+
+// Import solution w/ solver info from CSV
+instance smps_data = import_csv "solution1" : solved_mp_pf_with_solver {
+	branch -> {branch_source -> F_BUS branch_target -> T_BUS}
+	bus -> {bus -> BUS_I}
+	gen -> {gen_bus -> GEN_BUS}
+	pf_solver -> {}
+}
+
+// Convert SMPS to SPFS
+instance spfs_data = eval smps_to_spfs smps_data
+
+// Extract solution & solver data
+instance soln_data = delta [soln_into_spf ; spf_into_spfs] spfs_data
+instance solver_final_data = delta solver_final_into_spfs spfs_data
+
+// Convert back into UPFS
+instance upfs_data2 = delta upfs_into_spfs spfs_data
+

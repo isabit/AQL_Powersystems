@@ -1,0 +1,246 @@
+// Collection of Markov chains for different types of DERs
+schema DERMarkov = literal : sql {
+	entities
+		DERtype state transition
+	foreign_keys
+		for_type : state -> DERtype
+		from_state : transition -> state
+		to_state : transition -> state
+	path_equations
+		from_state.for_type = to_state.for_type
+	attributes
+		name : DERtype -> String
+		PMAX : DERtype -> Double
+		PMIN : DERtype -> Double
+		QMAX : DERtype -> Double
+		QMIN : DERtype -> Double
+		P : state -> Double
+		Q : state -> Double
+		rate : transition -> Double // > 0
+}
+
+// Network of DER 
+schema DERNetwork = literal : sql {
+	imports
+		DERMarkov
+	entities
+		DER //link
+	foreign_keys
+		of_type : DER -> DERtype
+		//from_DER : link -> DER
+		//to_DER : link -> DER
+}
+
+instance battery = literal : DERMarkov {
+	generators
+		battery : DERtype
+		batt_on batt_ch batt_dc : state
+		batt_o_to_c batt_o_to_d batt_c_to_o batt_d_to_o : transition
+	equations
+		name(battery) = "B"
+		for_type(batt_on) = battery
+		P(batt_on) = "0"
+		Q(batt_on) = "0"
+		for_type(batt_ch) = battery
+		P(batt_ch) = "1"
+		Q(batt_ch) = "1"
+		for_type(batt_dc) = battery
+		P(batt_dc) = "-1"
+		Q(batt_dc) = "1"
+		from_state(batt_o_to_c) = batt_on
+		to_state(batt_o_to_c) = batt_ch
+		rate(batt_o_to_c) = "0.4"
+		from_state(batt_o_to_d) = batt_on
+		to_state(batt_o_to_d) = batt_dc
+		rate(batt_o_to_d) = "0.4"
+		from_state(batt_c_to_o) = batt_ch
+		to_state(batt_c_to_o) = batt_on
+		rate(batt_c_to_o) = "0.2"
+		from_state(batt_d_to_o) = batt_dc
+		to_state(batt_d_to_o) = batt_on
+		rate(batt_d_to_o) = "0.05"
+}
+
+instance hvac = literal : DERMarkov {
+	generators
+		hvac : DERtype
+		hvac_off hvac_low hvac_high : state
+		hvac_o_to_l hvac_l_to_o hvac_l_to_h hvac_h_to_l : transition
+	equations
+		name(hvac) = "HVAC"
+		for_type(hvac_off) = hvac
+		P(hvac_off) = "0"
+		Q(hvac_off) = "0"
+		for_type(hvac_low) = hvac
+		P(hvac_low) = "1"
+		Q(hvac_low) = "1"
+		for_type(hvac_high) = hvac
+		P(hvac_high) = "2"
+		Q(hvac_high) = "2"
+		from_state(hvac_o_to_l) = hvac_off
+		to_state(hvac_o_to_l) = hvac_low
+		rate(hvac_o_to_l) = "0.5"
+		from_state(hvac_l_to_o) = hvac_low
+		to_state(hvac_l_to_o) = hvac_off
+		rate(hvac_l_to_o) = "0.2"
+		from_state(hvac_l_to_h) = hvac_low
+		to_state(hvac_l_to_h) = hvac_high
+		rate(hvac_l_to_h) = "0.3"
+		from_state(hvac_h_to_l) = hvac_high
+		to_state(hvac_h_to_l) = hvac_low
+		rate(hvac_h_to_l) = "0.2"
+}
+
+instance photovoltaic = literal : DERMarkov {
+	generators
+		photovoltaic : DERtype
+		pv_off pv_low pv_high : state
+		pv_o_to_l pv_l_to_o pv_l_to_h pv_h_to_l : transition
+	equations
+		name(photovoltaic) = "PV"
+		for_type(pv_off) = photovoltaic
+		P(pv_off) = "0"
+		Q(pv_off) = "0"
+		for_type(pv_low) = photovoltaic
+		P(pv_low) = "1"
+		Q(pv_low) = "1"
+		for_type(pv_high) = photovoltaic
+		P(pv_high) = "2"
+		Q(pv_high) = "2"
+		from_state(pv_o_to_l) = pv_off
+		to_state(pv_o_to_l) = pv_low
+		rate(pv_o_to_l) = "0.2"
+		from_state(pv_l_to_o) = pv_low
+		to_state(pv_l_to_o) = pv_off
+		rate(pv_l_to_o) = "0.2"
+		from_state(pv_l_to_h) = pv_low
+		to_state(pv_l_to_h) = pv_high
+		rate(pv_l_to_h) = "0.3"
+		from_state(pv_h_to_l) = pv_high
+		to_state(pv_h_to_l) = pv_low
+		rate(pv_h_to_l) = "0.2"
+}
+
+instance test = literal : DERNetwork {
+	generators
+		der : DER
+		type : DERtype
+		st1 st2 : state
+		tr12 tr21 : transition
+	equations
+		of_type(der) = type
+		for_type(st1) = type
+		P(st1) = "2"
+		Q(st1) = "2"
+		for_type(st2) = type
+		P(st2) = "-2"
+		Q(st2) = "2"
+		from_state(tr12) = st1
+		to_state(tr12) = st2
+		rate(tr12) = "1"
+		from_state(tr21) = st2
+		to_state(tr21) = st1
+		rate(tr21) = "1"
+}
+
+instance basicsetup = literal : DERNetwork {
+	imports
+		battery hvac photovoltaic
+	generators
+		batt1 batt2 batt3 batt4 batt5 : DER
+		hvac1 hvac2 hvac3 hvac4 hvac5 hvac6 hvac7 hvac8 hvac9 hvac10 : DER
+		pv1 pv2 pv3 pv4 pv5 pv6 pv7 pv8 pv9 pv10 pv11 : DER
+	equations
+		of_type(batt1) = battery
+		of_type(batt2) = battery
+		of_type(batt3) = battery
+		of_type(batt4) = battery
+		of_type(batt5) = battery
+		of_type(hvac1) = hvac
+		of_type(hvac2) = hvac
+		of_type(hvac3) = hvac
+		of_type(hvac4) = hvac
+		of_type(hvac5) = hvac
+		of_type(hvac6) = hvac
+		of_type(hvac7) = hvac
+		of_type(hvac8) = hvac
+		of_type(hvac9) = hvac
+		of_type(hvac10) = hvac
+		of_type(pv1) = photovoltaic
+		of_type(pv2) = photovoltaic
+		of_type(pv3) = photovoltaic
+		of_type(pv4) = photovoltaic
+		of_type(pv5) = photovoltaic
+		of_type(pv6) = photovoltaic
+		of_type(pv7) = photovoltaic
+		of_type(pv8) = photovoltaic
+		of_type(pv9) = photovoltaic
+		of_type(pv10) = photovoltaic
+		of_type(pv11) = photovoltaic
+}
+
+instance busA = literal : DERNetwork {
+	imports
+		battery photovoltaic
+	generators
+		batt1 batt2 batt3 batt4 batt5 : DER
+		pv1 pv2 pv3 pv4 pv5 pv6 pv7 pv8 pv9 pv10 : DER
+	equations
+		of_type(batt1) = battery
+		of_type(batt2) = battery
+		of_type(batt3) = battery
+		of_type(batt4) = battery
+		of_type(batt5) = battery
+		of_type(pv1) = photovoltaic
+		of_type(pv2) = photovoltaic
+		of_type(pv3) = photovoltaic
+		of_type(pv4) = photovoltaic
+		of_type(pv5) = photovoltaic
+		of_type(pv6) = photovoltaic
+		of_type(pv7) = photovoltaic
+		of_type(pv8) = photovoltaic
+		of_type(pv9) = photovoltaic
+		of_type(pv10) = photovoltaic
+}
+
+instance busB = literal : DERNetwork {
+	imports
+		hvac photovoltaic
+	generators
+		hvac1 hvac2 hvac3 hvac4 hvac5 hvac6 hvac7 hvac8 hvac9 hvac10 : DER
+		pv1 pv2 pv3 pv4 pv5 : DER
+	equations
+		of_type(hvac1) = hvac
+		of_type(hvac2) = hvac
+		of_type(hvac3) = hvac
+		of_type(hvac4) = hvac
+		of_type(hvac5) = hvac
+		of_type(hvac6) = hvac
+		of_type(hvac7) = hvac
+		of_type(hvac8) = hvac
+		of_type(hvac9) = hvac
+		of_type(hvac10) = hvac
+		of_type(pv1) = photovoltaic
+		of_type(pv2) = photovoltaic
+		of_type(pv3) = photovoltaic
+		of_type(pv4) = photovoltaic
+		of_type(pv5) = photovoltaic
+}
+
+instance busC = literal : DERNetwork {
+	imports
+		hvac
+	generators
+		hvac1 hvac2 hvac3 hvac4 hvac5 : DER
+	equations
+		of_type(hvac1) = hvac
+		of_type(hvac2) = hvac
+		of_type(hvac3) = hvac
+		of_type(hvac4) = hvac
+		of_type(hvac5) = hvac
+}
+
+command export_A = export_csv_instance busA "busA"
+command export_B = export_csv_instance busB "busB"
+command export_C = export_csv_instance busC "busC"
+command export_batt = export_csv_instance battery "battery"
